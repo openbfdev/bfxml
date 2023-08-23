@@ -1,0 +1,16 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/*
+ * Copyright(c) 2023 John Sanpe <sanpeqf@gmail.com>
+ */
+
+#ifndef _BFXML_CONFIG_H_
+#define _BFXML_CONFIG_H_
+
+#include <bfdev/cdefs.h>
+#include <bfdev/compiler.h>
+#include <bfdev/attributes.h>
+
+#define BFXML_VERSION_MAJOR ${CMAKE_PROJECT_VERSION_MAJOR}
+#define BFXML_VERSION_MINOR ${CMAKE_PROJECT_VERSION_MINOR}
+
+#endif /* _BFXML_CONFIG_H_ */
