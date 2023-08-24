@@ -567,6 +567,12 @@ trans_table[] = {
             },
             {
                 .next = &trans_table[XML_STATE_STRING],
+                .cond = (void *)(uintptr_t)'&',
+                .guard = guard_compare,
+                .cross = true,
+            },
+            {
+                .next = &trans_table[XML_STATE_STRING],
                 .cond = (void *)(uintptr_t)'\'',
                 .guard = guard_compare,
                 .action = action_curr,
