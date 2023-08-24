@@ -39,14 +39,14 @@ struct xml_desc {
     enum xml_type type;
 };
 
+struct xml_check {
+    unsigned short type;
+    const char *deny;
+};
+
 struct xml_string {
     const char *value;
     size_t len;
-};
-
-static const char
-xml_reserve[] = {
-    "<>&'\""
 };
 
 static int
@@ -196,7 +196,7 @@ child_exit(struct bfxml_decoder *ctx)
 }
 
 static long
-guard_compare(struct bfdev_fsm_event *event, const void *cond)
+check_compare(struct bfdev_fsm_event *event, const void *cond)
 {
     struct bfxml_decoder *ctx = event->pdata;
     char value;
@@ -206,7 +206,7 @@ guard_compare(struct bfdev_fsm_event *event, const void *cond)
 }
 
 static long
-guard_string(struct bfdev_fsm_event *event, const void *cond)
+check_string(struct bfdev_fsm_event *event, const void *cond)
 {
     struct bfxml_decoder *ctx = event->pdata;
     size_t length;
@@ -220,37 +220,28 @@ guard_string(struct bfdev_fsm_event *event, const void *cond)
 }
 
 static long
-guard_ctype(struct bfdev_fsm_event *event, const void *cond)
+check_char(struct bfdev_fsm_event *event, const void *cond)
 {
     struct bfxml_decoder *ctx = event->pdata;
-    unsigned short value;
+    const struct xml_check *check = cond;
+    unsigned char value;
 
-    value = bfdev_ctype_table[(unsigned char)*ctx->curr];
-    return !(value & (unsigned short)(uintptr_t)cond);
-}
-
-static long
-guard_check(struct bfdev_fsm_event *event, const void *cond)
-{
-    struct bfxml_decoder *ctx = event->pdata;
-    unsigned short value;
-
-    if (strchr(xml_reserve, *ctx->curr))
+    value = (unsigned char)*ctx->curr;
+    if (!(bfdev_ctype_table[value] & check->type))
         return 1;
 
-    value = bfdev_ctype_table[(unsigned char)*ctx->curr];
-    return !(value & (unsigned short)(uintptr_t)cond);
+    return !!strchr(check->deny, *ctx->curr);
 }
 
 static int
-action_curr(struct bfdev_fsm_event *event, void *data, void *curr, void *next)
+record_curr(struct bfdev_fsm_event *event, void *data, void *curr, void *next)
 {
     struct bfxml_decoder *ctx = event->pdata;
     return text_record(ctx, ctx->curr, 1);
 }
 
 static int
-action_string(struct bfdev_fsm_event *event, void *data, void *curr, void *next)
+record_string(struct bfdev_fsm_event *event, void *data, void *curr, void *next)
 {
     struct bfxml_decoder *ctx = event->pdata;
     struct xml_string *str = data;
@@ -258,7 +249,7 @@ action_string(struct bfdev_fsm_event *event, void *data, void *curr, void *next)
 }
 
 static int
-action_escape(struct bfdev_fsm_event *event, void *data, void *curr, void *next)
+record_escape(struct bfdev_fsm_event *event, void *data, void *curr, void *next)
 {
     struct bfxml_decoder *ctx = event->pdata;
     char value, *endptr;
@@ -343,23 +334,26 @@ error_entry(struct bfdev_fsm_event *event, void *data)
 static const struct bfdev_fsm_state
 trans_table[] = {
     [XML_STATE_LABEL] = {
-        .tnum = 4,
+        .tnum = -1,
         .trans = (struct bfdev_fsm_transition []) {
             {
                 .next = &trans_table[XML_STATE_ENAME],
+                .guard = check_compare,
                 .cond = (void *)(uintptr_t)'/',
-                .guard = guard_compare,
             },
             {
                 .next = &trans_table[XML_STATE_IGNORE],
+                .guard = check_string,
                 .cond = "!--",
-                .guard = guard_string,
             },
             {
                 .next = &trans_table[XML_STATE_NAME],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_GRAPH),
-                .guard = guard_check,
-                .action = action_curr,
+                .action = record_curr,
+                .guard = check_char,
+                .cond = &(struct xml_check) {
+                    .type = BFDEV_CTYPE_GRAPH,
+                    .deny = "<>&'\"",
+                },
             },
             { }, /* NULL */
         },
@@ -370,29 +364,35 @@ trans_table[] = {
     },
 
     [XML_STATE_NAME] = {
-        .tnum = 5,
+        .tnum = -1,
         .trans = (struct bfdev_fsm_transition []) {
             {
-                .next = &trans_table[XML_STATE_NAME],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_ALNUM),
-                .guard = guard_check,
-                .action = action_curr,
-            },
-            {
-                .next = &trans_table[XML_STATE_NAME],
-                .cond = (void *)(uintptr_t)'_',
-                .guard = guard_compare,
-                .action = action_curr,
-            },
-            {
                 .next = &trans_table[XML_STATE_BODY],
+                .guard = check_compare,
                 .cond = (void *)(uintptr_t)'>',
-                .guard = guard_compare,
+            },
+            {
+                .next = &trans_table[XML_STATE_NAME],
+                .action = record_curr,
+                .guard = check_compare,
+                .cond = (void *)(uintptr_t)'_',
+            },
+            {
+                .next = &trans_table[XML_STATE_NAME],
+                .action = record_curr,
+                .guard = check_char,
+                .cond = &(struct xml_check) {
+                    .type = BFDEV_CTYPE_ALNUM,
+                    .deny = "<&'\"",
+                },
             },
             {
                 .next = &trans_table[XML_STATE_AWAIT],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_SPACE),
-                .guard = guard_check,
+                .guard = check_char,
+                .cond = &(struct xml_check) {
+                    .type = BFDEV_CTYPE_SPACE,
+                    .deny = "<&'\"",
+                },
             },
             { }, /* NULL */
         },
@@ -405,28 +405,34 @@ trans_table[] = {
     },
 
     [XML_STATE_AWAIT] = {
-        .tnum = 5,
+        .tnum = -1,
         .trans = (struct bfdev_fsm_transition []) {
             {
                 .next = &trans_table[XML_STATE_BODY],
+                .guard = check_compare,
                 .cond = (void *)(uintptr_t)'>',
-                .guard = guard_compare,
             },
             {
                 .next = &trans_table[XML_STATE_EXIT],
+                .guard = check_compare,
                 .cond = (void *)(uintptr_t)'/',
-                .guard = guard_compare,
             },
             {
                 .next = &trans_table[XML_STATE_ANAME],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_GRAPH),
-                .guard = guard_check,
-                .action = action_curr,
+                .action = record_curr,
+                .guard = check_char,
+                .cond = &(struct xml_check) {
+                    .type = BFDEV_CTYPE_GRAPH,
+                    .deny = "<>&'\"",
+                },
             },
             {
                 .next = &trans_table[XML_STATE_AWAIT],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_SPACE),
-                .guard = guard_check,
+                .guard = check_char,
+                .cond = &(struct xml_check) {
+                    .type = BFDEV_CTYPE_SPACE,
+                    .deny = "<>&'\"",
+                },
             },
             { }, /* NULL */
         },
@@ -437,24 +443,27 @@ trans_table[] = {
     },
 
     [XML_STATE_ANAME] = {
-        .tnum = 4,
+        .tnum = -1,
         .trans = (struct bfdev_fsm_transition []) {
-            {
-                .next = &trans_table[XML_STATE_ANAME],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_ALNUM),
-                .guard = guard_check,
-                .action = action_curr,
-            },
-            {
-                .next = &trans_table[XML_STATE_ANAME],
-                .cond = (void *)(uintptr_t)'_',
-                .guard = guard_compare,
-                .action = action_curr,
-            },
             {
                 .next = &trans_table[XML_STATE_EQUAL],
                 .cond = (void *)(uintptr_t)'=',
-                .guard = guard_compare,
+                .guard = check_compare,
+            },
+            {
+                .next = &trans_table[XML_STATE_ANAME],
+                .guard = check_compare,
+                .action = record_curr,
+                .cond = (void *)(uintptr_t)'_',
+            },
+            {
+                .next = &trans_table[XML_STATE_ANAME],
+                .action = record_curr,
+                .guard = check_char,
+                .cond = &(struct xml_check) {
+                    .type = BFDEV_CTYPE_ALNUM,
+                    .deny = "<>&'\"",
+                },
             },
             { }, /* NULL */
         },
@@ -467,17 +476,17 @@ trans_table[] = {
     },
 
     [XML_STATE_EQUAL] = {
-        .tnum = 3,
+        .tnum = -1,
         .trans = (struct bfdev_fsm_transition []) {
             {
                 .next = &trans_table[XML_STATE_ASQUOTA],
                 .cond = (void *)(uintptr_t)'\'',
-                .guard = guard_compare,
+                .guard = check_compare,
             },
             {
                 .next = &trans_table[XML_STATE_ADQUOTA],
                 .cond = (void *)(uintptr_t)'"',
-                .guard = guard_compare,
+                .guard = check_compare,
             },
             { }, /* NULL */
         },
@@ -488,30 +497,27 @@ trans_table[] = {
     },
 
     [XML_STATE_ASQUOTA] = {
-        .tnum = 5,
+        .tnum = -1,
         .trans = (struct bfdev_fsm_transition []) {
             {
                 .next = &trans_table[XML_STATE_AWAIT],
                 .cond = (void *)(uintptr_t)'\'',
-                .guard = guard_compare,
+                .guard = check_compare,
             },
             {
                 .next = &trans_table[XML_STATE_ESCAPE],
                 .cond = (void *)(uintptr_t)'&',
-                .guard = guard_compare,
+                .guard = check_compare,
                 .stack = +1,
             },
             {
                 .next = &trans_table[XML_STATE_ASQUOTA],
-                .cond = (void *)(uintptr_t)'"',
-                .guard = guard_compare,
-                .action = action_curr,
-            },
-            {
-                .next = &trans_table[XML_STATE_ASQUOTA],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_GRAPH),
-                .guard = guard_check,
-                .action = action_curr,
+                .cond = &(struct xml_check) {
+                    .type = BFDEV_CTYPE_GRAPH,
+                    .deny = "<>&'",
+                },
+                .guard = check_char,
+                .action = record_curr,
             },
             { }, /* NULL */
         },
@@ -523,30 +529,27 @@ trans_table[] = {
     },
 
     [XML_STATE_ADQUOTA] = {
-        .tnum = 5,
+        .tnum = -1,
         .trans = (struct bfdev_fsm_transition []) {
             {
                 .next = &trans_table[XML_STATE_AWAIT],
                 .cond = (void *)(uintptr_t)'"',
-                .guard = guard_compare,
+                .guard = check_compare,
             },
             {
                 .next = &trans_table[XML_STATE_ESCAPE],
                 .cond = (void *)(uintptr_t)'&',
-                .guard = guard_compare,
+                .guard = check_compare,
                 .stack = +1,
             },
             {
                 .next = &trans_table[XML_STATE_ADQUOTA],
-                .cond = (void *)(uintptr_t)'\'',
-                .guard = guard_compare,
-                .action = action_curr,
-            },
-            {
-                .next = &trans_table[XML_STATE_ADQUOTA],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_SPACE | BFDEV_CTYPE_GRAPH),
-                .guard = guard_check,
-                .action = action_curr,
+                .cond = &(struct xml_check) {
+                    .type = BFDEV_CTYPE_SPACE | BFDEV_CTYPE_GRAPH,
+                    .deny = "<>&\"",
+                },
+                .guard = check_char,
+                .action = record_curr,
             },
             { }, /* NULL */
         },
@@ -558,41 +561,35 @@ trans_table[] = {
     },
 
     [XML_STATE_BODY] = {
-        .tnum = 6,
+        .tnum = -1,
         .trans = (struct bfdev_fsm_transition []) {
             {
                 .next = &trans_table[XML_STATE_LABEL],
                 .cond = (void *)(uintptr_t)'<',
-                .guard = guard_compare,
+                .guard = check_compare,
             },
             {
                 .next = &trans_table[XML_STATE_STRING],
                 .cond = (void *)(uintptr_t)'&',
-                .guard = guard_compare,
+                .guard = check_compare,
                 .cross = true,
             },
             {
                 .next = &trans_table[XML_STATE_STRING],
-                .cond = (void *)(uintptr_t)'\'',
-                .guard = guard_compare,
-                .action = action_curr,
-            },
-            {
-                .next = &trans_table[XML_STATE_STRING],
-                .cond = (void *)(uintptr_t)'"',
-                .guard = guard_compare,
-                .action = action_curr,
-            },
-            {
-                .next = &trans_table[XML_STATE_STRING],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_GRAPH),
-                .guard = guard_check,
-                .action = action_curr,
+                .cond = &(struct xml_check) {
+                    .type = BFDEV_CTYPE_GRAPH,
+                    .deny = ">",
+                },
+                .guard = check_char,
+                .action = record_curr,
             },
             {
                 .next = &trans_table[XML_STATE_BODY],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_SPACE),
-                .guard = guard_check,
+                .cond = &(struct xml_check) {
+                    .type = BFDEV_CTYPE_SPACE,
+                    .deny = "",
+                },
+                .guard = check_char,
             },
             { }, /* NULL */
         },
@@ -603,36 +600,27 @@ trans_table[] = {
     },
 
     [XML_STATE_STRING] = {
-        .tnum = 6,
+        .tnum = -1,
         .trans = (struct bfdev_fsm_transition []) {
             {
                 .next = &trans_table[XML_STATE_LABEL],
                 .cond = (void *)(uintptr_t)'<',
-                .guard = guard_compare,
+                .guard = check_compare,
             },
             {
                 .next = &trans_table[XML_STATE_ESCAPE],
                 .cond = (void *)(uintptr_t)'&',
-                .guard = guard_compare,
+                .guard = check_compare,
                 .stack = +1,
             },
             {
                 .next = &trans_table[XML_STATE_STRING],
-                .cond = (void *)(uintptr_t)'\'',
-                .guard = guard_compare,
-                .action = action_curr,
-            },
-            {
-                .next = &trans_table[XML_STATE_STRING],
-                .cond = (void *)(uintptr_t)'"',
-                .guard = guard_compare,
-                .action = action_curr,
-            },
-            {
-                .next = &trans_table[XML_STATE_STRING],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_SPACE | BFDEV_CTYPE_PRINT),
-                .guard = guard_check,
-                .action = action_curr,
+                .cond = &(struct xml_check) {
+                    .type = BFDEV_CTYPE_SPACE | BFDEV_CTYPE_PRINT,
+                    .deny = ">",
+                },
+                .guard = check_char,
+                .action = record_curr,
             },
             { }, /* NULL */
         },
@@ -645,12 +633,12 @@ trans_table[] = {
     },
 
     [XML_STATE_EXIT] = {
-        .tnum = 2,
+        .tnum = -1,
         .trans = (struct bfdev_fsm_transition []) {
             {
                 .next = &trans_table[XML_STATE_BODY],
                 .cond = (void *)(uintptr_t)'>',
-                .guard = guard_compare,
+                .guard = check_compare,
             },
             { }, /* NULL */
         },
@@ -662,18 +650,21 @@ trans_table[] = {
     },
 
     [XML_STATE_ENAME] = {
-        .tnum = 3,
+        .tnum = -1,
         .trans = (struct bfdev_fsm_transition []) {
             {
                 .next = &trans_table[XML_STATE_BODY],
                 .cond = (void *)(uintptr_t)'>',
-                .guard = guard_compare,
+                .guard = check_compare,
             },
             {
                 .next = &trans_table[XML_STATE_ENAME],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_PRINT),
-                .guard = guard_check,
-                .action = action_curr,
+                .cond = &(struct xml_check) {
+                    .type = BFDEV_CTYPE_PRINT,
+                    .deny = "<&'\"",
+                },
+                .guard = check_char,
+                .action = record_curr,
             },
             { }, /* NULL */
         },
@@ -685,17 +676,20 @@ trans_table[] = {
     },
 
     [XML_STATE_IGNORE] = {
-        .tnum = 3,
+        .tnum = -1,
         .trans = (struct bfdev_fsm_transition []) {
             {
                 .next = &trans_table[XML_STATE_BODY],
                 .cond = "-->",
-                .guard = guard_string,
+                .guard = check_string,
             },
             {
                 .next = &trans_table[XML_STATE_IGNORE],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_ASCII),
-                .guard = guard_ctype,
+                .cond = &(struct xml_check) {
+                    .type = BFDEV_CTYPE_ASCII,
+                    .deny = "",
+                },
+                .guard = check_char,
             },
             { }, /* NULL */
         },
@@ -706,13 +700,13 @@ trans_table[] = {
     },
 
     [XML_STATE_ESCAPE] = {
-        .tnum = 7,
+        .tnum = -1,
         .trans = (struct bfdev_fsm_transition []) {
             {
                 .next = &trans_table[XML_STATE_EEXIT],
                 .cond = "amp",
-                .guard = guard_string,
-                .action = action_string,
+                .guard = check_string,
+                .action = record_string,
                 .data = &(struct xml_string) {
                     .value = "&",
                     .len = 1,
@@ -721,8 +715,8 @@ trans_table[] = {
             {
                 .next = &trans_table[XML_STATE_EEXIT],
                 .cond = "quot",
-                .guard = guard_string,
-                .action = action_string,
+                .guard = check_string,
+                .action = record_string,
                 .data = &(struct xml_string) {
                     .value = "\"",
                     .len = 1,
@@ -731,8 +725,8 @@ trans_table[] = {
             {
                 .next = &trans_table[XML_STATE_EEXIT],
                 .cond = "apos",
-                .guard = guard_string,
-                .action = action_string,
+                .guard = check_string,
+                .action = record_string,
                 .data = &(struct xml_string) {
                     .value = "'",
                     .len = 1,
@@ -741,8 +735,8 @@ trans_table[] = {
             {
                 .next = &trans_table[XML_STATE_EEXIT],
                 .cond = "lt",
-                .guard = guard_string,
-                .action = action_string,
+                .guard = check_string,
+                .action = record_string,
                 .data = &(struct xml_string) {
                     .value = "<",
                     .len = 1,
@@ -751,8 +745,8 @@ trans_table[] = {
             {
                 .next = &trans_table[XML_STATE_EEXIT],
                 .cond = "gt",
-                .guard = guard_string,
-                .action = action_string,
+                .guard = check_string,
+                .action = record_string,
                 .data = &(struct xml_string) {
                     .value = ">",
                     .len = 1,
@@ -761,8 +755,8 @@ trans_table[] = {
             {
                 .next = &trans_table[XML_STATE_EEXIT],
                 .cond = (void *)(uintptr_t)'#',
-                .guard = guard_compare,
-                .action = action_escape,
+                .guard = check_compare,
+                .action = record_escape,
             },
             { }, /* NULL */
         },
@@ -773,11 +767,11 @@ trans_table[] = {
     },
 
     [XML_STATE_EEXIT] = {
-        .tnum = 2,
+        .tnum = -1,
         .trans = (struct bfdev_fsm_transition []) {
             {
                 .cond = (void *)(uintptr_t)';',
-                .guard = guard_compare,
+                .guard = check_compare,
                 .stack = -1,
             },
             { }, /* NULL */
