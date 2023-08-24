@@ -797,15 +797,14 @@ bfxml_decoder_handle(struct bfxml_decoder *decoder, const char *data, size_t len
     int retval;
 
     for (decoder->curr = data; *decoder->curr && len; --len) {
+        decoder->column++;
         retval = bfdev_fsm_handle(
             &decoder->fsm, &(struct bfdev_fsm_event) {
                 .pdata = decoder,
             }
         );
 
-        if (*decoder->curr++ != '\n')
-            decoder->column++;
-        else {
+        if (*decoder->curr++ == '\n') {
             decoder->column = 0;
             decoder->line++;
         }
@@ -838,7 +837,6 @@ bfxml_decoder_create(const struct bfdev_alloc *alloc)
     bfdev_list_head_init(&root->child);
 
     decoder->alloc = alloc;
-    decoder->column = 1;
     decoder->line = 1;
 
     decoder->root = root;
