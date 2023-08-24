@@ -858,5 +858,6 @@ export void
 bfxml_decoder_destory(struct bfxml_decoder *decoder)
 {
     const struct bfdev_alloc *alloc = decoder->alloc;
+    bfdev_array_release(&decoder->tbuff);
     bfdev_free(alloc, decoder);
 }
