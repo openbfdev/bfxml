@@ -4,10 +4,8 @@
  */
 
 #include <bfxml.h>
-#include <bfxml/xml.h>
-#include <bfdev/fsm.h>
+#include <bfxml/decoder.h>
 #include <bfdev/ctype.h>
-#include <bfdev/array.h>
 #include <export.h>
 
 enum xml_state {
@@ -36,15 +34,6 @@ enum xml_type {
     XML_TYPE_DUMMY,
 };
 
-struct xml_conetext {
-    const struct bfdev_alloc *alloc;
-    struct bfdev_fsm fsm;
-    struct bfdev_array tbuff;
-    struct bfxml_node *node;
-    const char *origin;
-    const char *content;
-};
-
 struct xml_desc {
     const char *name;
     enum xml_type type;
@@ -61,7 +50,7 @@ xml_reserve[] = {
 };
 
 static int
-text_record(struct xml_conetext *ctx, const char *str, size_t len)
+text_record(struct bfxml_decoder *ctx, const char *str, size_t len)
 {
     char *buff;
 
@@ -74,7 +63,7 @@ text_record(struct xml_conetext *ctx, const char *str, size_t len)
 }
 
 static int
-text_apply(struct xml_conetext *ctx, enum xml_type type)
+text_apply(struct bfxml_decoder *ctx, enum xml_type type)
 {
     const struct bfdev_alloc *alloc;
     struct bfxml_node *node;
@@ -118,7 +107,7 @@ text_apply(struct xml_conetext *ctx, enum xml_type type)
 }
 
 static bool
-text_verify(struct xml_conetext *ctx)
+text_verify(struct bfxml_decoder *ctx)
 {
     struct bfxml_node *node;
     size_t length;
@@ -136,7 +125,7 @@ text_verify(struct xml_conetext *ctx)
 }
 
 static int
-child_enter(struct xml_conetext *ctx, enum xml_type type)
+child_enter(struct bfxml_decoder *ctx, enum xml_type type)
 {
     const struct bfdev_alloc *alloc;
     struct bfxml_node *child, *parent;
@@ -148,7 +137,6 @@ child_enter(struct xml_conetext *ctx, enum xml_type type)
     if (unlikely(!child))
         return -BFDEV_ENOMEM;
 
-    bfdev_list_head_init(&child->child);
     bfdev_list_add_prev(&parent->child, &child->sibling);
     child->parent = parent;
     ctx->node = child;
@@ -156,6 +144,7 @@ child_enter(struct xml_conetext *ctx, enum xml_type type)
     switch (type) {
         case XML_TYPE_NAME:
             bfxml_set_object(child);
+            bfdev_list_head_init(&child->child);
             break;
 
         case XML_TYPE_ANAME: case XML_TYPE_AVALUE:
@@ -174,75 +163,77 @@ child_enter(struct xml_conetext *ctx, enum xml_type type)
 }
 
 static int
-child_exit(struct xml_conetext *ctx)
+child_exit(struct bfxml_decoder *ctx)
 {
     struct bfxml_node *parent;
 
     if (unlikely(!(parent = ctx->node->parent)))
         return BFDEV_FSM_FINISH;
 
+    ctx->node->complete = true;
     ctx->node = parent;
+
     return -BFDEV_ENOERR;
 }
 
 static long
 guard_compare(struct bfdev_fsm_event *event, const void *cond)
 {
-    struct xml_conetext *ctx = event->pdata;
+    struct bfxml_decoder *ctx = event->pdata;
     char value;
 
     value = (char)(uintptr_t)cond;
-    return *ctx->content - value;
+    return *ctx->curr - value;
 }
 
 static long
 guard_string(struct bfdev_fsm_event *event, const void *cond)
 {
-    struct xml_conetext *ctx = event->pdata;
+    struct bfxml_decoder *ctx = event->pdata;
     size_t length;
 
     length = strlen(cond);
-    if (strncmp(ctx->content, cond, length))
+    if (strncmp(ctx->curr, cond, length))
         return 1;
 
-    ctx->content += length - 1;
+    ctx->curr += length - 1;
     return 0;
 }
 
 static long
 guard_ctype(struct bfdev_fsm_event *event, const void *cond)
 {
-    struct xml_conetext *ctx = event->pdata;
+    struct bfxml_decoder *ctx = event->pdata;
     unsigned short value;
 
-    value = bfdev_ctype_table[(unsigned char)*ctx->content];
+    value = bfdev_ctype_table[(unsigned char)*ctx->curr];
     return !(value & (unsigned short)(uintptr_t)cond);
 }
 
 static long
 guard_check(struct bfdev_fsm_event *event, const void *cond)
 {
-    struct xml_conetext *ctx = event->pdata;
+    struct bfxml_decoder *ctx = event->pdata;
     unsigned short value;
 
-    if (strchr(xml_reserve, *ctx->content))
+    if (strchr(xml_reserve, *ctx->curr))
         return 1;
 
-    value = bfdev_ctype_table[(unsigned char)*ctx->content];
+    value = bfdev_ctype_table[(unsigned char)*ctx->curr];
     return !(value & (unsigned short)(uintptr_t)cond);
 }
 
 static int
-action_content(struct bfdev_fsm_event *event, void *data, void *curr, void *next)
+action_curr(struct bfdev_fsm_event *event, void *data, void *curr, void *next)
 {
-    struct xml_conetext *ctx = event->pdata;
-    return text_record(ctx, ctx->content, 1);
+    struct bfxml_decoder *ctx = event->pdata;
+    return text_record(ctx, ctx->curr, 1);
 }
 
 static int
 action_string(struct bfdev_fsm_event *event, void *data, void *curr, void *next)
 {
-    struct xml_conetext *ctx = event->pdata;
+    struct bfxml_decoder *ctx = event->pdata;
     struct xml_string *str = data;
     return text_record(ctx, str->value, str->len);
 }
@@ -250,27 +241,27 @@ action_string(struct bfdev_fsm_event *event, void *data, void *curr, void *next)
 static int
 action_escape(struct bfdev_fsm_event *event, void *data, void *curr, void *next)
 {
-    struct xml_conetext *ctx = event->pdata;
+    struct bfxml_decoder *ctx = event->pdata;
     char value, *endptr;
     int base = 10;
 
-    if (*++ctx->content == 'x') {
-        ctx->content++;
+    if (*++ctx->curr == 'x') {
+        ctx->curr++;
         base = 16;
     }
 
-    value = strtoul(ctx->content, &endptr, base);
+    value = strtoul(ctx->curr, &endptr, base);
     if (value < 0x20)
         return 0;
 
-    ctx->content = endptr - 1;
+    ctx->curr = endptr - 1;
     return text_record(ctx, &value, 1);
 }
 
 static int
 state_entry(struct bfdev_fsm_event *event, void *data)
 {
-    struct xml_conetext *ctx = event->pdata;
+    struct bfxml_decoder *ctx = event->pdata;
     struct xml_desc *desc = data;
     return child_enter(ctx, desc->type);
 }
@@ -278,14 +269,14 @@ state_entry(struct bfdev_fsm_event *event, void *data)
 static int
 state_exit(struct bfdev_fsm_event *event, void *data)
 {
-    struct xml_conetext *ctx = event->pdata;
+    struct bfxml_decoder *ctx = event->pdata;
     return child_exit(ctx);
 }
 
 static int
 state_record(struct bfdev_fsm_event *event, void *data)
 {
-    struct xml_conetext *ctx = event->pdata;
+    struct bfxml_decoder *ctx = event->pdata;
     struct xml_desc *desc = data;
     return text_apply(ctx, desc->type);
 }
@@ -293,7 +284,7 @@ state_record(struct bfdev_fsm_event *event, void *data)
 static int
 state_record_exit(struct bfdev_fsm_event *event, void *data)
 {
-    struct xml_conetext *ctx = event->pdata;
+    struct bfxml_decoder *ctx = event->pdata;
     struct xml_desc *desc = data;
     int retval;
 
@@ -307,7 +298,7 @@ state_record_exit(struct bfdev_fsm_event *event, void *data)
 static int
 state_check_exit(struct bfdev_fsm_event *event, void *data)
 {
-    struct xml_conetext *ctx = event->pdata;
+    struct bfxml_decoder *ctx = event->pdata;
 
     if (unlikely(!text_verify(ctx))) {
         bfdev_fsm_error(&ctx->fsm, event);
@@ -320,27 +311,12 @@ state_check_exit(struct bfdev_fsm_event *event, void *data)
 static int
 error_entry(struct bfdev_fsm_event *event, void *data)
 {
-    struct xml_conetext *ctx = event->pdata;
+    struct bfxml_decoder *ctx = event->pdata;
     struct xml_desc *desc;
-    unsigned int line, column;
-    const char *walk;
-
-    line = 1;
-    column = 0;
-
-    for (walk = ctx->origin; walk <= ctx->content; ++walk) {
-        if (*walk != '\n') {
-            column++;
-            continue;
-        }
-
-        column = 0;
-        line++;
-    }
 
     desc = bfdev_fsm_prev(&ctx->fsm)->data;
     printf("error on line %u column %u: '%c' in state %s\n",
-            line, column, *ctx->content, desc->name);
+            ctx->line, ctx->column, *ctx->curr, desc->name);
 
     return 0;
 }
@@ -369,7 +345,7 @@ trans_table[] = {
                 .next = &trans_table[XML_STATE_NAME],
                 .cond = (void *)(uintptr_t)(BFDEV_CTYPE_GRAPH),
                 .guard = guard_check,
-                .action = action_content,
+                .action = action_curr,
             },
             { }, /* NULL */
         },
@@ -396,7 +372,7 @@ trans_table[] = {
                 .next = &trans_table[XML_STATE_NAME],
                 .cond = (void *)(uintptr_t)(BFDEV_CTYPE_GRAPH),
                 .guard = guard_check,
-                .action = action_content,
+                .action = action_curr,
             },
             { }, /* NULL */
         },
@@ -425,7 +401,7 @@ trans_table[] = {
                 .next = &trans_table[XML_STATE_ANAME],
                 .cond = (void *)(uintptr_t)(BFDEV_CTYPE_GRAPH),
                 .guard = guard_check,
-                .action = action_content,
+                .action = action_curr,
             },
             {
                 .next = &trans_table[XML_STATE_AWAIT],
@@ -452,7 +428,7 @@ trans_table[] = {
                 .next = &trans_table[XML_STATE_ANAME],
                 .cond = (void *)(uintptr_t)(BFDEV_CTYPE_GRAPH),
                 .guard = guard_check,
-                .action = action_content,
+                .action = action_curr,
             },
             { }, /* NULL */
         },
@@ -503,13 +479,13 @@ trans_table[] = {
                 .next = &trans_table[XML_STATE_ASQUOTA],
                 .cond = (void *)(uintptr_t)'"',
                 .guard = guard_compare,
-                .action = action_content,
+                .action = action_curr,
             },
             {
                 .next = &trans_table[XML_STATE_ASQUOTA],
                 .cond = (void *)(uintptr_t)(BFDEV_CTYPE_GRAPH),
                 .guard = guard_check,
-                .action = action_content,
+                .action = action_curr,
             },
             { }, /* NULL */
         },
@@ -538,13 +514,13 @@ trans_table[] = {
                 .next = &trans_table[XML_STATE_ADQUOTA],
                 .cond = (void *)(uintptr_t)'\'',
                 .guard = guard_compare,
-                .action = action_content,
+                .action = action_curr,
             },
             {
                 .next = &trans_table[XML_STATE_ADQUOTA],
                 .cond = (void *)(uintptr_t)(BFDEV_CTYPE_GRAPH),
                 .guard = guard_check,
-                .action = action_content,
+                .action = action_curr,
             },
             { }, /* NULL */
         },
@@ -567,19 +543,19 @@ trans_table[] = {
                 .next = &trans_table[XML_STATE_STRING],
                 .cond = (void *)(uintptr_t)'\'',
                 .guard = guard_compare,
-                .action = action_content,
+                .action = action_curr,
             },
             {
                 .next = &trans_table[XML_STATE_STRING],
                 .cond = (void *)(uintptr_t)'"',
                 .guard = guard_compare,
-                .action = action_content,
+                .action = action_curr,
             },
             {
                 .next = &trans_table[XML_STATE_STRING],
                 .cond = (void *)(uintptr_t)(BFDEV_CTYPE_GRAPH),
                 .guard = guard_check,
-                .action = action_content,
+                .action = action_curr,
             },
             {
                 .next = &trans_table[XML_STATE_BODY],
@@ -612,19 +588,19 @@ trans_table[] = {
                 .next = &trans_table[XML_STATE_STRING],
                 .cond = (void *)(uintptr_t)'\'',
                 .guard = guard_compare,
-                .action = action_content,
+                .action = action_curr,
             },
             {
                 .next = &trans_table[XML_STATE_STRING],
                 .cond = (void *)(uintptr_t)'"',
                 .guard = guard_compare,
-                .action = action_content,
+                .action = action_curr,
             },
             {
                 .next = &trans_table[XML_STATE_STRING],
                 .cond = (void *)(uintptr_t)(BFDEV_CTYPE_SPACE | BFDEV_CTYPE_PRINT),
                 .guard = guard_check,
-                .action = action_content,
+                .action = action_curr,
             },
             { }, /* NULL */
         },
@@ -665,7 +641,7 @@ trans_table[] = {
                 .next = &trans_table[XML_STATE_ENAME],
                 .cond = (void *)(uintptr_t)(BFDEV_CTYPE_PRINT),
                 .guard = guard_check,
-                .action = action_content,
+                .action = action_curr,
             },
             { }, /* NULL */
         },
@@ -790,44 +766,69 @@ trans_table[] = {
 };
 
 export int
-bfxml_decode(const struct bfdev_alloc *alloc, const char *buff,
-             struct bfxml_node **rootp)
+bfxml_decoder_handle(struct bfxml_decoder *decoder, const char *data, size_t len)
 {
-    struct xml_conetext ctx;
-    struct bfxml_node *root;
     int retval;
 
-    root = bfdev_zalloc(alloc, sizeof(*root));
-    if (unlikely(!root))
-        return -BFDEV_ENOMEM;
-
-    root->flags = BFXML_IS_OBJECT;
-    bfdev_list_head_init(&root->child);
-
-    ctx.node = root;
-    ctx.alloc = alloc;
-    ctx.origin = buff;
-    bfdev_array_init(&ctx.tbuff, alloc, sizeof(*buff));
-
-    bfdev_fsm_init(
-        &ctx.fsm, alloc,
-        &trans_table[XML_STATE_BODY],
-        &trans_table[XML_STATE_ERROR]
-    );
-
-    for (ctx.content = buff; *ctx.content; ++ctx.content) {
+    for (decoder->curr = data; *decoder->curr && len; --len) {
+        decoder->column++;
         retval = bfdev_fsm_handle(
-            &ctx.fsm, &(struct bfdev_fsm_event) {
-                .pdata = &ctx,
+            &decoder->fsm, &(struct bfdev_fsm_event) {
+                .pdata = decoder,
             }
         );
+
+        if (*decoder->curr++ == '\n') {
+            decoder->column = 0;
+            decoder->line++;
+        }
+
         if (retval == BFDEV_FSM_FINISH)
-            break;
+            return -BFDEV_EFAULT;
 
         if (retval < 0)
             return retval;
     }
 
-    *rootp = root;
     return -BFDEV_ENOERR;
+}
+
+export struct bfxml_decoder *
+bfxml_decoder_create(const struct bfdev_alloc *alloc)
+{
+    struct bfxml_decoder *decoder;
+    struct bfxml_node *root;
+
+    decoder = bfdev_zalloc(alloc, sizeof(*decoder));
+    if (unlikely(!decoder))
+        return NULL;
+
+    root = bfdev_zalloc(alloc, sizeof(*root));
+    if (unlikely(!root))
+        return NULL;
+
+    root->flags = BFXML_IS_OBJECT;
+    bfdev_list_head_init(&root->child);
+
+    decoder->alloc = alloc;
+    decoder->line = 1;
+
+    decoder->root = root;
+    decoder->node = root;
+    bfdev_array_init(&decoder->tbuff, alloc, sizeof(*decoder->curr));
+
+    bfdev_fsm_init(
+        &decoder->fsm, alloc,
+        &trans_table[XML_STATE_BODY],
+        &trans_table[XML_STATE_ERROR]
+    );
+
+    return decoder;
+}
+
+export void
+bfxml_decoder_destory(struct bfxml_decoder *decoder)
+{
+    const struct bfdev_alloc *alloc = decoder->alloc;
+    bfdev_free(alloc, decoder);
 }

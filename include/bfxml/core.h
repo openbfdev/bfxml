@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * Copyright(c) 2023 Sanpe <sanpeqf@gmail.com>
+ * Copyright(c) 2023 John Sanpe <sanpeqf@gmail.com>
  */
 
-#ifndef _BFXML_XML_H_
-#define _BFXML_XML_H_
+#ifndef _BFXML_CORE_H_
+#define _BFXML_CORE_H_
 
 #include <bfxml/config.h>
 #include <bfdev/errno.h>
@@ -28,6 +28,7 @@ struct bfxml_node {
     struct bfxml_node *parent;
     struct bfdev_list_head sibling;
     unsigned long flags;
+    bool complete;
 
     union {
         /* object */
@@ -58,4 +59,4 @@ extern void bfxml_release(const struct bfdev_alloc *alloc, struct bfxml_node *ro
 
 BFDEV_END_DECLS
 
-#endif  /* _BFXML_XML_H_ */
+#endif /* _BFXML_CORE_H_ */

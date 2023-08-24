@@ -4,7 +4,7 @@
  */
 
 #include <bfxml.h>
-#include <bfxml/xml.h>
+#include <bfxml/core.h>
 #include <bfdev/minmax.h>
 #include <export.h>
 

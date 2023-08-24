@@ -1,36 +1,12 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * Copyright(c) 2022 Sanpe <sanpeqf@gmail.com>
+ * Copyright(c) 2023 John Sanpe <sanpeqf@gmail.com>
  */
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <err.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <bfxml/xml.h>
-
-static inline void *
-pathmap(struct stat *stat, const char *path)
-{
-    void *block;
-    int fd;
-
-    if ((fd = open(path, O_RDONLY)) < 0)
-        err(errno, path);
-
-    if ((errno = fstat(fd, stat)) < 0)
-        err(errno, path);
-
-    block = mmap(NULL, stat->st_size, PROT_READ, MAP_SHARED, fd, 0);
-    if (block == MAP_FAILED)
-        err(errno, path);
-
-    return block;
-}
+#include <bfxml/decoder.h>
+#include "../helper.c"
 
 static void
 xml_dumpinfo(struct bfxml_node *parent, unsigned int depth)
@@ -60,34 +36,33 @@ xml_dumpinfo(struct bfxml_node *parent, unsigned int depth)
 
 int main(int argc, char *argv[])
 {
+    struct bfxml_decoder *decoder;
     struct bfxml_node *xnode;
     struct stat stat;
-    int length, retval;
-    char *buff, *block;
+    char *block;
+    int retval;
 
     block = pathmap(&stat, argv[1]);
-    retval = bfxml_decode(NULL, block, &xnode);
-    if (retval)
+    decoder = bfxml_decoder_create(NULL);
+    if (!decoder) {
+        printf("failed to create decoder\n");
+        return 1;
+    }
+
+    retval = bfxml_decoder_handle(decoder, block, -1);
+    if (retval) {
+        printf("failed to decode\n");
         return retval;
+    }
+
+    xnode = decoder->root;
+    bfxml_decoder_destory(decoder);
 
     printf("pseudo expression:\n");
     xml_dumpinfo(xnode, 1);
 
-    printf("xml encode:\n");
-    length = bfxml_encode(xnode, NULL, 0);
-
-    buff = malloc(length);
-    if (!buff) {
-        retval = 1;
-        goto finish;
-    }
-
-    length = bfxml_encode(xnode, buff, length);
-    fwrite(buff, length, 1, stdout);
-    free(buff);
-
-finish:
     bfxml_release(NULL, xnode);
     munmap(block, stat.st_size);
+
     return retval;
 }
