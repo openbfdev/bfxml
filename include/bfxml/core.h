@@ -54,7 +54,6 @@ BFDEV_BITFLAGS_STRUCT_FLAG(bfxml, struct bfxml_node, flags, attribute, __BFXML_I
 BFDEV_BITFLAGS_STRUCT_FLAG(bfxml, struct bfxml_node, flags, string, __BFXML_IS_STRING)
 
 extern int bfxml_encode(struct bfxml_node *root, char *buff, int size);
-extern int bfxml_decode(const struct bfdev_alloc *alloc, const char *buff, struct bfxml_node **root);
 extern void bfxml_release(const struct bfdev_alloc *alloc, struct bfxml_node *root);
 
 BFDEV_END_DECLS
