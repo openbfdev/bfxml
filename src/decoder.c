@@ -62,6 +62,19 @@ text_record(struct bfxml_decoder *ctx, const char *str, size_t len)
     return -BFDEV_ENOERR;
 }
 
+static size_t
+text_shrink(const char *buff, size_t length)
+{
+    size_t count;
+
+    for (count = length; count; --count) {
+        if (!isspace(buff[count - 1]))
+            break;
+    }
+
+    return count;
+}
+
 static int
 text_apply(struct bfxml_decoder *ctx, enum xml_type type)
 {
@@ -72,7 +85,13 @@ text_apply(struct bfxml_decoder *ctx, enum xml_type type)
 
     alloc = ctx->alloc;
     node = ctx->node;
+
     length = bfdev_array_size(&ctx->tbuff);
+    if (!length)
+        return -BFDEV_ENOERR;
+
+    if (type == XML_TYPE_STRING)
+        length = text_shrink(ctx->tbuff.data, length);
 
     buff = bfdev_malloc(alloc, length + 1);
     if (unlikely(!buff))
