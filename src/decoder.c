@@ -334,8 +334,8 @@ error_entry(struct bfdev_fsm_event *event, void *data)
     struct xml_desc *desc;
 
     desc = bfdev_fsm_prev(&ctx->fsm)->data;
-    printf("error on line %u column %u: '%c' in state %s\n",
-            ctx->line, ctx->column, *ctx->curr, desc->name);
+    printf("XML Parsing Error: %s\n", desc->name);
+    printf("Line Number %u, Column %u\n", ctx->line, ctx->column);
 
     return 0;
 }
@@ -459,7 +459,7 @@ trans_table[] = {
             { }, /* NULL */
         },
         .data = &(struct xml_desc) {
-            .name = "aname",
+            .name = "attribute name",
             .type = XML_TYPE_ANAME,
         },
         .enter = state_entry,
@@ -482,7 +482,7 @@ trans_table[] = {
             { }, /* NULL */
         },
         .data = &(struct xml_desc) {
-            .name = "equal",
+            .name = "attribute equal",
             .type = XML_TYPE_DUMMY,
         },
     },
@@ -516,7 +516,7 @@ trans_table[] = {
             { }, /* NULL */
         },
         .data = &(struct xml_desc) {
-            .name = "asquota",
+            .name = "attribute single quota",
             .type = XML_TYPE_AVALUE,
         },
         .exit = state_record_exit,
@@ -551,7 +551,7 @@ trans_table[] = {
             { }, /* NULL */
         },
         .data = &(struct xml_desc) {
-            .name = "adquota",
+            .name = "attribute double quota",
             .type = XML_TYPE_AVALUE,
         },
         .exit = state_record_exit,
@@ -672,7 +672,7 @@ trans_table[] = {
             { }, /* NULL */
         },
         .data = &(struct xml_desc) {
-            .name = "ename",
+            .name = "exit name",
             .type = XML_TYPE_NAME,
         },
         .exit = state_check_exit,
@@ -694,7 +694,7 @@ trans_table[] = {
             { }, /* NULL */
         },
         .data = &(struct xml_desc) {
-            .name = "ignore",
+            .name = "annotation",
             .type = XML_TYPE_DUMMY,
         },
     },
@@ -777,7 +777,7 @@ trans_table[] = {
             { }, /* NULL */
         },
         .data = &(struct xml_desc) {
-            .name = "eexit",
+            .name = "escape exit",
             .type = XML_TYPE_DUMMY,
         },
     },
@@ -797,14 +797,15 @@ bfxml_decoder_handle(struct bfxml_decoder *decoder, const char *data, size_t len
     int retval;
 
     for (decoder->curr = data; *decoder->curr && len; --len) {
-        decoder->column++;
         retval = bfdev_fsm_handle(
             &decoder->fsm, &(struct bfdev_fsm_event) {
                 .pdata = decoder,
             }
         );
 
-        if (*decoder->curr++ == '\n') {
+        if (*decoder->curr++ != '\n')
+            decoder->column++;
+        else {
             decoder->column = 0;
             decoder->line++;
         }
@@ -837,6 +838,7 @@ bfxml_decoder_create(const struct bfdev_alloc *alloc)
     bfdev_list_head_init(&root->child);
 
     decoder->alloc = alloc;
+    decoder->column = 1;
     decoder->line = 1;
 
     decoder->root = root;

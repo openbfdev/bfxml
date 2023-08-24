@@ -9,7 +9,7 @@
 #include "../helper.c"
 
 static void
-xml_dumpinfo(struct bfxml_node *parent, unsigned int depth)
+dump_info(struct bfxml_node *parent, unsigned int depth)
 {
     struct bfxml_node *child;
     unsigned int count;
@@ -19,7 +19,7 @@ xml_dumpinfo(struct bfxml_node *parent, unsigned int depth)
         for (count = 0; count < depth; ++count)
             printf("\t");
         if (bfxml_test_object(child)) {
-            xml_dumpinfo(child, depth + 1);
+            dump_info(child, depth + 1);
             continue;
         }
         if (bfxml_test_attribute(child))
@@ -32,6 +32,27 @@ xml_dumpinfo(struct bfxml_node *parent, unsigned int depth)
     for (count = 0; count < depth - 1; ++count)
         printf("\t");
     printf("}\n");
+}
+
+static void
+show_error(struct bfxml_decoder *decoder, char *block)
+{
+    unsigned int count;
+    char *end;
+
+    for (count = 1; count < decoder->line; ++count) {
+        block = strchr(block, '\n');
+        if (!block++)
+            return;
+    }
+
+    end = strchr(block, '\n');
+    count = end ? end - block : -1;
+    printf("%.*s\n", count, block);
+
+    for (count = 1; count < decoder->column; ++count)
+        printf("-");
+    printf("^\n");
 }
 
 int main(int argc, char *argv[])
@@ -51,7 +72,7 @@ int main(int argc, char *argv[])
 
     retval = bfxml_decoder_handle(decoder, block, -1);
     if (retval) {
-        printf("failed to decode\n");
+        show_error(decoder, block);
         return retval;
     }
 
@@ -59,7 +80,7 @@ int main(int argc, char *argv[])
     bfxml_decoder_destory(decoder);
 
     printf("pseudo expression:\n");
-    xml_dumpinfo(xnode, 1);
+    dump_info(xnode, 1);
 
     bfxml_release(NULL, xnode);
     munmap(block, stat.st_size);
