@@ -365,7 +365,7 @@ trans_table[] = {
             },
             {
                 .next = &trans_table[XML_STATE_AWAIT],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_SPACE | BFDEV_CTYPE_HDSPA),
+                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_SPACE),
                 .guard = guard_check,
             },
             {
@@ -405,7 +405,7 @@ trans_table[] = {
             },
             {
                 .next = &trans_table[XML_STATE_AWAIT],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_SPACE | BFDEV_CTYPE_HDSPA),
+                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_SPACE),
                 .guard = guard_check,
             },
             { }, /* NULL */
@@ -559,7 +559,7 @@ trans_table[] = {
             },
             {
                 .next = &trans_table[XML_STATE_BODY],
-                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_SPACE | BFDEV_CTYPE_HDSPA),
+                .cond = (void *)(uintptr_t)(BFDEV_CTYPE_SPACE),
                 .guard = guard_check,
             },
             { }, /* NULL */
