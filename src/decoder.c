@@ -21,6 +21,7 @@ enum xml_state {
     XML_STATE_EXIT,
     XML_STATE_ENAME,
     XML_STATE_IGNORE,
+    XML_STATE_IEXIT,
     XML_STATE_ESCAPE,
     XML_STATE_EEXIT,
     XML_STATE_ERROR,
@@ -679,9 +680,9 @@ trans_table[] = {
         .tnum = -1,
         .trans = (struct bfdev_fsm_transition []) {
             {
-                .next = &trans_table[XML_STATE_BODY],
+                .next = &trans_table[XML_STATE_IEXIT],
                 .guard = check_string,
-                .cond = "-->",
+                .cond = "--",
             },
             {
                 .next = &trans_table[XML_STATE_IGNORE],
@@ -694,7 +695,23 @@ trans_table[] = {
             { }, /* NULL */
         },
         .data = &(struct xml_desc) {
-            .name = "annotation",
+            .name = "ignore",
+            .type = XML_TYPE_DUMMY,
+        },
+    },
+
+    [XML_STATE_IEXIT] = {
+        .tnum = -1,
+        .trans = (struct bfdev_fsm_transition []) {
+            {
+                .next = &trans_table[XML_STATE_BODY],
+                .guard = check_compare,
+                .cond = (void *)(uintptr_t)'>',
+            },
+            { }, /* NULL */
+        },
+        .data = &(struct xml_desc) {
+            .name = "ignore exit",
             .type = XML_TYPE_DUMMY,
         },
     },
