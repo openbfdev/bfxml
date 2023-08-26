@@ -42,3 +42,48 @@ time_dump(int ticks, clock_t start, clock_t stop, struct tms *start_tms, struct 
     printf("\tuser time: %lf\n", (stop_tms->tms_utime - start_tms->tms_utime) / (double)ticks);
     printf("\tkern time: %lf\n", (stop_tms->tms_stime - start_tms->tms_stime) / (double)ticks);
 }
+
+static inline unsigned int
+count_line(const char *start)
+{
+    unsigned int line = 1;
+
+    while ((start = strchr(start, '\n'))) {
+        start++;
+        line++;
+    }
+
+    return line;
+}
+
+static inline void
+show_error(struct bfxml_decoder *decoder, const char *start)
+{
+    unsigned int line, column, count;
+    const char *walk;
+    int size;
+
+    column = 1;
+    line = 1;
+
+    for (walk = start; walk <= decoder->curr; ++walk) {
+        if (*walk != '\n') {
+            column++;
+            continue;
+        }
+
+        start = walk;
+        column = 0;
+        line++;
+    }
+
+    walk = strchr(walk, '\n');
+    size = walk ? walk - ++start: -1;
+
+    printf("Line Number %u, Column %u\n", line, column);
+    printf("%.*s\n", size, start);
+
+    for (count = 1; count < column; ++count)
+        printf("-");
+    printf("^\n");
+}

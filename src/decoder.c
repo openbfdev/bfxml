@@ -50,20 +50,6 @@ struct xml_string {
     size_t len;
 };
 
-static void
-update_position(struct bfxml_decoder *ctx, const char *str, size_t len)
-{
-    while (len--) {
-        if (*str++ != '\n') {
-            ctx->column++;
-            continue;
-        }
-
-        ctx->column = 1;
-        ctx->line++;
-    }
-}
-
 static int
 text_record(struct bfxml_decoder *ctx, const char *str, size_t len)
 {
@@ -231,8 +217,6 @@ check_string(struct bfdev_fsm_event *event, const void *cond)
         return 1;
 
     ctx->curr += length - 1;
-    update_position(ctx, ctx->curr, length - 1);
-
     return 0;
 }
 
@@ -343,7 +327,6 @@ error_entry(struct bfdev_fsm_event *event, void *data)
 
     desc = bfdev_fsm_prev(&ctx->fsm)->data;
     printf("XML Parsing Error: %s\n", desc->name);
-    printf("Line Number %u, Column %u\n", ctx->line, ctx->column);
 
     return 0;
 }
@@ -842,7 +825,6 @@ bfxml_decoder_handle(struct bfxml_decoder *decoder, const char *data, size_t len
         if (retval < 0)
             return retval;
 
-        update_position(decoder, decoder->curr, 1);
         decoder->curr++;
     }
 
@@ -867,9 +849,6 @@ bfxml_decoder_create(const struct bfdev_alloc *alloc)
     bfdev_list_head_init(&root->child);
 
     decoder->alloc = alloc;
-    decoder->column = 1;
-    decoder->line = 1;
-
     decoder->root = root;
     decoder->node = root;
     bfdev_array_init(&decoder->tbuff, alloc, sizeof(*decoder->curr));

@@ -34,27 +34,6 @@ dump_info(struct bfxml_node *parent, unsigned int depth)
     printf("}\n");
 }
 
-static void
-show_error(struct bfxml_decoder *decoder, char *block)
-{
-    unsigned int count;
-    char *end;
-
-    for (count = 1; count < decoder->line; ++count) {
-        block = strchr(block, '\n');
-        if (!block++)
-            return;
-    }
-
-    end = strchr(block, '\n');
-    count = end ? end - block : -1;
-    printf("%.*s\n", count, block);
-
-    for (count = 1; count < decoder->column; ++count)
-        printf("-");
-    printf("^\n");
-}
-
 int main(int argc, char *argv[])
 {
     struct bfxml_decoder *decoder;

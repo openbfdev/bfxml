@@ -18,9 +18,6 @@ struct bfxml_decoder {
     struct bfdev_fsm fsm;
     struct bfdev_array tbuff;
 
-    unsigned int column;
-    unsigned int line;
-
     struct bfxml_node *root;
     struct bfxml_node *node;
     const char *curr;

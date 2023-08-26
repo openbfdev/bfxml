@@ -36,13 +36,13 @@ int main(int argc, char *argv[])
     for (count = 0; count < TEST_LEN; ++count) {
         retval = bfxml_decoder_handle(decoder, block, -1);
         if (retval) {
-            printf("Failed to decode\n");
+            show_error(decoder, block);
             return retval;
         }
     }
     stop = times(&stop_tms);
     time_dump(ticks, start, stop, &start_tms, &stop_tms);
-    printf("\ttotal line: %u\n", decoder->line);
+    printf("\ttotal line: %u\n", count_line(block) * TEST_LEN);
 
     bfxml_release(NULL, decoder->root);
     bfxml_decoder_destory(decoder);
