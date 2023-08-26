@@ -56,7 +56,7 @@ update_position(struct bfxml_decoder *ctx, const char *str, size_t len)
     while (len--) {
         if (*str++ != '\n') {
             ctx->column++;
-            continue;;
+            continue;
         }
 
         ctx->column = 1;

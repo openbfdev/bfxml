@@ -42,6 +42,19 @@ add_library(bfxml_static STATIC ${BFXML_LIBRARY})
 add_library(bfxml_shared SHARED ${BFXML_LIBRARY})
 add_library(bfxml ALIAS bfxml_object)
 
+set_target_properties(bfxml_static
+    PROPERTIES
+    OUTPUT_NAME bfxml
+    LINKER_LANGUAGE C
+)
+
+set_target_properties(bfxml_shared
+    PROPERTIES VERSION 1.0 SOVERSION 1
+    OUTPUT_NAME bfxml
+    MACOSX_RPATH ON
+    LINKER_LANGUAGE C
+)
+
 target_link_libraries(bfxml_object bfdev)
 target_link_libraries(bfxml_static bfdev)
 target_link_libraries(bfxml_shared bfdev)
