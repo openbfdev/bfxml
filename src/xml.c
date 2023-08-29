@@ -12,7 +12,7 @@ bfxml_release(const struct bfdev_alloc *alloc, struct bfxml_node *root)
 {
     struct bfxml_node *node, *tmp;
 
-    if (unlikely(!root))
+    if (bfdev_unlikely(!root))
         return;
 
     bfdev_list_for_each_entry_safe(node, tmp, &root->child, sibling) {

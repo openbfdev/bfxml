@@ -56,7 +56,7 @@ text_record(struct bfxml_decoder *ctx, const char *str, size_t len)
     char *buff;
 
     buff = bfdev_array_push(&ctx->tbuff, len);
-    if (unlikely(!buff))
+    if (bfdev_unlikely(!buff))
         return -BFDEV_ENOMEM;
 
     memcpy(buff, str, len);
@@ -95,7 +95,7 @@ text_apply(struct bfxml_decoder *ctx, enum xml_type type)
         length = text_shrink(ctx->tbuff.data, length);
 
     buff = bfdev_malloc(alloc, length + 1);
-    if (unlikely(!buff))
+    if (bfdev_unlikely(!buff))
         return -BFDEV_ENOMEM;
 
     memcpy(buff, ctx->tbuff.data, length);
@@ -135,7 +135,7 @@ text_verify(struct bfxml_decoder *ctx)
 
     node = ctx->node;
     length = bfdev_array_size(&ctx->tbuff);
-    if (unlikely(!length))
+    if (bfdev_unlikely(!length))
         return false;
 
     retval = !strncmp(ctx->tbuff.data, node->name, length);
@@ -154,7 +154,7 @@ child_enter(struct bfxml_decoder *ctx, enum xml_type type)
     parent = ctx->node;
 
     child = bfdev_zalloc(alloc, sizeof(*child));
-    if (unlikely(!child))
+    if (bfdev_unlikely(!child))
         return -BFDEV_ENOMEM;
 
     bfdev_list_add_prev(&parent->child, &child->sibling);
@@ -187,7 +187,7 @@ child_exit(struct bfxml_decoder *ctx)
 {
     struct bfxml_node *parent;
 
-    if (unlikely(!(parent = ctx->node->parent)))
+    if (bfdev_unlikely(!(parent = ctx->node->parent)))
         return BFDEV_FSM_FINISH;
 
     ctx->node->complete = true;
@@ -300,7 +300,7 @@ state_record_exit(struct bfdev_fsm_event *event, void *data)
     int retval;
 
     retval = text_apply(ctx, desc->type);
-    if (unlikely(retval))
+    if (bfdev_unlikely(retval))
         return retval;
 
     return child_exit(ctx);
@@ -311,7 +311,7 @@ state_check_exit(struct bfdev_fsm_event *event, void *data)
 {
     struct bfxml_decoder *ctx = event->pdata;
 
-    if (unlikely(!text_verify(ctx))) {
+    if (bfdev_unlikely(!text_verify(ctx))) {
         bfdev_fsm_error(&ctx->fsm, event);
         return -BFDEV_EINVAL;
     }
@@ -838,11 +838,11 @@ bfxml_decoder_create(const struct bfdev_alloc *alloc)
     struct bfxml_node *root;
 
     decoder = bfdev_zalloc(alloc, sizeof(*decoder));
-    if (unlikely(!decoder))
+    if (bfdev_unlikely(!decoder))
         return NULL;
 
     root = bfdev_zalloc(alloc, sizeof(*root));
-    if (unlikely(!root))
+    if (bfdev_unlikely(!root))
         return NULL;
 
     root->flags = BFXML_IS_OBJECT;
