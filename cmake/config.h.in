@@ -7,8 +7,8 @@
 #define _BFXML_CONFIG_H_
 
 #include <bfdev/cdefs.h>
+#include <bfdev/stringify.h>
 #include <bfdev/compiler.h>
-#include <bfdev/attributes.h>
 
 #define BFXML_VERSION_MAJOR ${CMAKE_PROJECT_VERSION_MAJOR}
 #define BFXML_VERSION_MINOR ${CMAKE_PROJECT_VERSION_MINOR}
